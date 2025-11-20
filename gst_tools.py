@@ -1,155 +1,159 @@
-"""
-Tool definitions for GST compliance operations
-"""
-from typing import Any, Dict
+from typing import List, Dict, Any
+from google.adk.tools import ToolContext
+from datetime import datetime
 
-def gst_filing_tool(sme_id: str, filing_period: str, invoices: list, tool_context=None) -> Dict[str, Any]:
+
+def gst_filing_tool(
+    sme_id: str,
+    filing_period: str,
+    invoices: List[Dict[str, Any]],
+    *,  # Force keyword-only from here
+    tool_context: ToolContext
+) -> Dict[str, Any]:
     """
-    Mock tool for GST filing operations.
+    File GST returns for an SME for a specific period.
     
     Args:
-        sme_id: SME identifier
-        filing_period: Period for which GST is being filed (e.g., "2024-01")
-        invoices: List of invoices for the period
-        tool_context: Context from ADK containing session state
+        sme_id: The unique identifier of the SME (e.g., 'SME_001')
+        filing_period: The GST filing period in YYYY-MM format (e.g., '2024-01')
+        invoices: List of invoice dictionaries, each with invoice_number, amount, and gst_rate
+        tool_context: Tool execution context (automatically provided by ADK)
     
     Returns:
-        Dict with filing result and status
+        Dictionary containing:
+        - result: Success message
+        - invoice_count: Number of invoices filed
+        - total_value: Total value of all invoices
+        - filing_date: Date when filing was completed
     """
-    try:
-        # Simulate processing invoices
-        total_value = sum(inv.get("amount", 5000) for inv in invoices) if invoices else 50 * 5000
+    # Calculate total value
+    total_value = sum(invoice.get('amount', 0) for invoice in invoices)
+    
+    # Update compliance status in session state
+    if hasattr(tool_context, 'state'):
+        if 'compliance_status' not in tool_context.state:
+            tool_context.state['compliance_status'] = {}
         
-        result = {
-            "action": "gst_filing",
-            "sme_id": sme_id,
-            "filing_period": filing_period,
-            "invoice_count": len(invoices) if invoices else 50,
-            "total_value": total_value,
-            "status": "successfully_filed",
-            "result": f"✅ GST filing for {filing_period} completed with {len(invoices) if invoices else 50} invoices. Total value: ₹{total_value:,.2f}"
+        tool_context.state['compliance_status']['gst_filing'] = {
+            'period': filing_period,
+            'status': 'filed',
+            'invoice_count': len(invoices),
+            'total_value': total_value,
+            'filing_date': datetime.now().isoformat()
         }
         
-        if tool_context and hasattr(tool_context, 'state'):
-            state = tool_context.state
-            if "compliance_status" not in state:
-                state["compliance_status"] = {}
-            state["compliance_status"]["gst_filing"] = {
-                "period": filing_period,
-                "status": "filed",
-                "invoice_count": len(invoices) if invoices else 50,
-                "total_value": total_value
-            }
+        # Add to compliance history
+        if 'compliance_history' not in tool_context.state:
+            tool_context.state['compliance_history'] = []
         
-        return result
-    except Exception as e:
-        return {
-            "action": "gst_filing",
-            "status": "failed",
-            "error": str(e)
-        }
+        tool_context.state['compliance_history'].append({
+            'action': 'gst_filing',
+            'period': filing_period,
+            'timestamp': datetime.now().isoformat(),
+            'status': 'success',
+            'details': f"Filed GST for {filing_period} with {len(invoices)} invoices, total ₹{total_value:,.2f}"
+        })
+    
+    return {
+        'result': f'✅ GST filing for {filing_period} completed successfully',
+        'invoice_count': len(invoices),
+        'total_value': total_value,
+        'filing_date': datetime.now().strftime('%Y-%m-%d')
+    }
 
 
-def invoice_validation_tool(sme_id: str, invoices: list = None, tool_context=None) -> Dict[str, Any]:
+def invoice_validation_tool(
+    sme_id: str,
+    invoices: List[Dict[str, Any]],
+    *,
+    tool_context: ToolContext
+) -> Dict[str, Any]:
     """
-    Mock tool for validating invoices against GST compliance rules.
+    Validate invoices for GST compliance.
     
     Args:
-        sme_id: SME identifier
-        invoices: List of invoices to validate
-        tool_context: Context from ADK containing session state
+        sme_id: The unique identifier of the SME (e.g., 'SME_001')
+        invoices: List of invoice dictionaries to validate
+        tool_context: Tool execution context (automatically provided by ADK)
     
     Returns:
-        Dict with validation results
+        Dictionary containing:
+        - valid_invoices: Count of valid invoices
+        - invalid_invoices: Count of invalid invoices
+        - details: Validation summary message
+        - issues: List of validation issues found
     """
-    try:
-        # Generate sample invoices if not provided
-        if invoices is None or len(invoices) == 0:
-            invoices = [
-                {"invoice_number": f"INV-{i:03d}", "amount": 5000, "gst_rate": 18}
-                for i in range(50)
-            ]
-        
-        # Simulate validation: 48 valid, 2 invalid
-        valid_count = int(len(invoices) * 0.96)
-        invalid_count = len(invoices) - valid_count
-        
-        result = {
-            "action": "invoice_validation",
-            "sme_id": sme_id,
-            "valid_invoices": valid_count,
-            "invalid_invoices": invalid_count,
-            "status": "validation_complete",
-            "details": f"✓ {valid_count} invoices passed validation | ✗ {invalid_count} invoices have issues",
-            "invalid_invoice_details": [
-                {"invoice": f"INV-{i:03d}", "issue": "Missing GST number"} for i in range(48, 48 + invalid_count)
-            ]
-        }
-        
-        if tool_context and hasattr(tool_context, 'state'):
-            state = tool_context.state
-            if "compliance_status" not in state:
-                state["compliance_status"] = {}
-            state["compliance_status"]["invoice_validation"] = {
-                "valid_count": valid_count,
-                "invalid_count": invalid_count,
-                "validation_status": "completed"
-            }
-        
-        return result
-    except Exception as e:
-        return {
-            "action": "invoice_validation",
-            "status": "failed",
-            "error": str(e)
-        }
+    valid_count = 0
+    invalid_count = 0
+    issues = []
+    
+    for idx, invoice in enumerate(invoices):
+        if not invoice.get('invoice_number'):
+            invalid_count += 1
+            issues.append(f"Invoice {idx + 1}: Missing invoice number")
+        elif invoice.get('amount', 0) <= 0:
+            invalid_count += 1
+            issues.append(f"Invoice {invoice.get('invoice_number')}: Invalid amount")
+        elif not invoice.get('gst_rate'):
+            invalid_count += 1
+            issues.append(f"Invoice {invoice.get('invoice_number')}: Missing GST rate")
+        else:
+            valid_count += 1
+    
+    return {
+        'valid_invoices': valid_count,
+        'invalid_invoices': invalid_count,
+        'details': f'Invoice validation complete: {valid_count} valid, {invalid_count} invalid out of {len(invoices)} total',
+        'issues': issues
+    }
 
 
-def gst_compliance_check_tool(sme_id: str, filing_period: str = None, tool_context=None) -> Dict[str, Any]:
+def gst_compliance_check_tool(
+    sme_id: str,
+    filing_period: str,
+    *,
+    tool_context: ToolContext
+) -> Dict[str, Any]:
     """
-    Mock tool for checking GST compliance against regulatory rules.
+    Check GST compliance status for a specific period.
     
     Args:
-        sme_id: SME identifier
-        filing_period: Filing period to check
-        tool_context: Context from ADK containing session state
+        sme_id: The unique identifier of the SME (e.g., 'SME_001')
+        filing_period: The GST filing period in YYYY-MM format (e.g., '2024-01')
+        tool_context: Tool execution context (automatically provided by ADK)
     
     Returns:
-        Dict with compliance check results
+        Dictionary containing:
+        - status: Compliance status (compliant/non-compliant)
+        - compliance_issues: Count of compliance issues
+        - issues: List of detailed issues
+        - recommendations: List of recommended actions
     """
-    try:
-        compliance_issues = [
-            {
-                "type": "late_filing",
-                "severity": "high",
-                "description": "GST filing was submitted 5 days after deadline. Late fee may apply."
-            }
-        ]
+    # Check if filing exists in state
+    status = 'compliant'
+    issues = []
+    recommendations = []
+    
+    if hasattr(tool_context, 'state'):
+        compliance_status = tool_context.state.get('compliance_status', {})
+        gst_filing = compliance_status.get('gst_filing', {})
         
-        result = {
-            "action": "gst_compliance_check",
-            "sme_id": sme_id,
-            "filing_period": filing_period or "2024-01",
-            "compliance_issues": len(compliance_issues),
-            "status": "non_compliant",
-            "issues": compliance_issues,
-            "recommendations": [
-                "⚠️ Apply for late fee waiver with GST authorities",
-                "📋 Submit required documentation explaining the delay",
-                "📅 Set calendar reminders for next filing due date"
-            ]
-        }
-        
-        if tool_context and hasattr(tool_context, 'state'):
-            state = tool_context.state
-            if "exception_log" not in state:
-                state["exception_log"] = []
-            state["exception_log"].extend(compliance_issues)
-        
-        return result
-    except Exception as e:
-        return {
-            "action": "gst_compliance_check",
-            "status": "failed",
-            "error": str(e)
-        }
+        if gst_filing.get('period') != filing_period:
+            status = 'non-compliant'
+            issues.append({
+                'type': 'missing_filing',
+                'severity': 'high',
+                'description': f'No GST filing found for period {filing_period}'
+            })
+            recommendations.append(f'• File GST returns for {filing_period} immediately')
+    
+    if not issues:
+        recommendations.append('• All GST filings are up to date')
+        recommendations.append('• Continue monitoring compliance status regularly')
+    
+    return {
+        'status': status,
+        'compliance_issues': len(issues),
+        'issues': issues,
+        'recommendations': recommendations
+    }

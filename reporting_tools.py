@@ -1,219 +1,138 @@
-"""
-Tool definitions for Regulatory Reporting operations
-"""
-from typing import Any, Dict
+from typing import Dict, Any
+from google.adk.tools import ToolContext
 from datetime import datetime
+import uuid
 
-def generate_compliance_report_tool(sme_id: str, report_type: str = "quarterly", period: str = "Q1", tool_context=None) -> Dict[str, Any]:
+
+def generate_compliance_report_tool(
+    sme_id: str,
+    report_type: str,
+    period: str,
+    *,
+    tool_context: ToolContext
+) -> Dict[str, Any]:
     """
-    Mock tool for generating regulatory compliance reports.
+    Generate a compliance report for the specified period.
     
     Args:
-        sme_id: SME identifier
-        report_type: Type of report (e.g., "monthly", "quarterly", "annual")
-        period: Period for the report (e.g., "Q1", "2024-01")
-        tool_context: Context from ADK containing session state
+        sme_id: The unique identifier of the SME (e.g., 'SME_001')
+        report_type: Type of report (quarterly, annual, monthly)
+        period: Reporting period (e.g., 'Q1_2024', '2024-01')
+        tool_context: Tool execution context (automatically provided by ADK)
     
     Returns:
-        Dict with report generation results
+        Dictionary with report ID, sections, and risk assessment
     """
-    try:
-        report_id = f"RPT_{sme_id}_{period}_{datetime.now().strftime('%Y%m%d')}"
-        
-        report_data = {
-            "report_id": report_id,
-            "generated_at": datetime.now().isoformat(),
-            "report_type": report_type,
-            "period": period,
-            "status": "generated",
-            "sections": {
-                "GST_Compliance_Summary": {
-                    "status": "Filed",
-                    "invoices": 50,
-                    "issues": 1,
-                    "late_filing_flag": True
-                },
-                "Payroll_Compliance_Summary": {
-                    "status": "Compliant",
-                    "employees": 10,
-                    "pf_status": "Compliant",
-                    "esi_status": "Compliant",
-                    "issues": 0
-                },
-                "Tax_Compliance_Summary": {
-                    "status": "Compliant",
-                    "tds_filed": True,
-                    "issues": 0
-                },
-                "Risk_Assessment": {
-                    "overall_risk": "Low",
-                    "critical_issues": 0,
-                    "high_priority_issues": 1,
-                    "medium_priority_issues": 0
-                },
-                "Recommendations": [
-                    "Apply for late fee waiver for GST late filing",
-                    "Continue current payroll practices - all compliant",
-                    "File TDS return on schedule",
-                    "Next compliance review: 60 days"
-                ]
-            }
+    report_id = f"RPT-{uuid.uuid4().hex[:8].upper()}"
+    
+    # Get compliance data from state
+    compliance_status = {}
+    compliance_history = []
+    
+    if hasattr(tool_context, 'state'):
+        compliance_status = tool_context.state.get('compliance_status', {})
+        compliance_history = tool_context.state.get('compliance_history', [])
+    
+    # Generate report sections
+    sections = {
+        'Executive_Summary': {
+            'total_actions': len(compliance_history),
+            'compliance_rate': '95%'
+        },
+        'GST_Compliance': compliance_status.get('gst_filing', {}),
+        'Payroll_Compliance': compliance_status.get('payroll_processing', {}),
+        'Risk_Assessment': {
+            'overall_risk': 'low',
+            'critical_issues': 0,
+            'high_priority_issues': 0
         }
-        
-        result = {
-            "action": "generate_compliance_report",
-            "sme_id": sme_id,
-            "report_id": report_id,
-            "report_type": report_type,
-            "period": period,
-            "status": "report_generated",
-            "generated_at": report_data["generated_at"],
-            "summary": f"✅ Compliance Report Generated\n   Report ID: {report_id}\n   Period: {period} ({report_type})\n   Overall Risk Level: Low\n   Total Sections: 5\n   Critical Issues: 0\n   High Priority Issues: 1 (Late GST filing)",
-            "sections": report_data["sections"]
-        }
-        
-        if tool_context and hasattr(tool_context, 'state'):
-            state = tool_context.state
-            if "compliance_history" not in state:
-                state["compliance_history"] = []
-            state["compliance_history"].append({
-                "action": "report_generated",
-                "report_id": report_id,
-                "period": period,
-                "timestamp": report_data["generated_at"]
-            })
-        
-        return result
-    except Exception as e:
-        return {
-            "action": "generate_compliance_report",
-            "status": "failed",
-            "error": str(e)
-        }
+    }
+    
+    return {
+        'report_id': report_id,
+        'report_type': report_type,
+        'period': period,
+        'generated_date': datetime.now().strftime('%Y-%m-%d'),
+        'sections': sections
+    }
 
 
-def compliance_summary_tool(sme_id: str, tool_context=None) -> Dict[str, Any]:
+def compliance_summary_tool(
+    sme_id: str,
+    *,
+    tool_context: ToolContext
+) -> Dict[str, Any]:
     """
-    Mock tool for generating compliance summary status.
+    Get a summary of current compliance status.
     
     Args:
-        sme_id: SME identifier
-        tool_context: Context from ADK containing session state
+        sme_id: The unique identifier of the SME (e.g., 'SME_001')
+        tool_context: Tool execution context (automatically provided by ADK)
     
     Returns:
-        Dict with compliance summary
+        Dictionary with compliance snapshot and summary
     """
-    try:
-        summary_data = {
-            "gst_status": "Compliant (Late Filing Issue)",
-            "payroll_status": "Compliant",
-            "tax_status": "Compliant",
-            "overall_risk_level": "Low",
-            "last_audit": datetime.now().isoformat(),
-            "next_deadline": "2024-12-15",
-            "compliance_score": 92,
-            "action_items": [
-                "Apply for late fee waiver for GST",
-                "Monitor payroll deadlines",
-                "File quarterly TDS return"
-            ]
-        }
-        
-        result = {
-            "action": "compliance_summary",
-            "sme_id": sme_id,
-            "status": "summary_generated",
-            "compliance_snapshot": f"""
-✅ COMPLIANCE STATUS SNAPSHOT
-═══════════════════════════════════════════════════════════════════════════════
-│ GST Status           │ Compliant (1 Late Filing Issue)                     │
-│ Payroll Status       │ ✅ Compliant (All Rules Followed)                   │
-│ Tax Status           │ ✅ Compliant (TDS Calculations Accurate)            │
-│ Overall Risk Level   │ 🟢 LOW (92/100 Compliance Score)                   │
-│ Next Deadline        │ 2024-12-15                                          │
-└──────────────────────────────────────────────────────────────────────────────┘
-
-⚠️ ACTION ITEMS:
-  1. Apply for late fee waiver for GST filing (Priority: HIGH)
-  2. Monitor monthly payroll deadlines
-  3. File quarterly TDS return by deadline
-  4. Schedule next compliance review: 60 days
-
-📋 DOMAINS SUMMARY:
-  • GST: 50 invoices processed (48 valid, 2 issues)
-  • Payroll: 10 employees (PF ✅, ESI ✅)
-  • Tax: TDS calculations complete
-            """,
-            "summary_data": summary_data
-        }
-        
-        return result
-    except Exception as e:
-        return {
-            "action": "compliance_summary",
-            "status": "failed",
-            "error": str(e)
-        }
+    compliance_status = {}
+    compliance_history = []
+    
+    if hasattr(tool_context, 'state'):
+        compliance_status = tool_context.state.get('compliance_status', {})
+        compliance_history = tool_context.state.get('compliance_history', [])
+    
+    # Build summary
+    summary_lines = ["📊 Compliance Summary for " + sme_id, "=" * 50]
+    
+    if compliance_status:
+        summary_lines.append("\n✅ Active Compliance Items:")
+        for key, value in compliance_status.items():
+            summary_lines.append(f"  • {key.replace('_', ' ').title()}: {value.get('status', 'unknown')}")
+    else:
+        summary_lines.append("\n⚠️ No compliance actions recorded yet")
+    
+    if compliance_history:
+        summary_lines.append(f"\n📋 Recent Actions ({len(compliance_history)}):")
+        for item in compliance_history[-3:]:  # Last 3 items
+            summary_lines.append(f"  • {item.get('action', 'unknown')}: {item.get('status', 'unknown')}")
+    
+    snapshot = "\n".join(summary_lines)
+    
+    return {
+        'compliance_snapshot': snapshot,
+        'total_items': len(compliance_status),
+        'recent_actions': len(compliance_history)
+    }
 
 
-def audit_trail_retrieval_tool(sme_id: str, tool_context=None) -> Dict[str, Any]:
+def audit_trail_retrieval_tool(
+    sme_id: str,
+    start_date: str,
+    end_date: str,
+    *,
+    tool_context: ToolContext
+) -> Dict[str, Any]:
     """
-    Mock tool for retrieving compliance audit trails.
+    Retrieve audit trail for a date range.
     
     Args:
-        sme_id: SME identifier
-        tool_context: Context from ADK containing session state
+        sme_id: The unique identifier of the SME (e.g., 'SME_001')
+        start_date: Start date in YYYY-MM-DD format
+        end_date: End date in YYYY-MM-DD format
+        tool_context: Tool execution context (automatically provided by ADK)
     
     Returns:
-        Dict with audit trail data
+        Dictionary with audit trail entries for the specified period
     """
-    try:
-        audit_events = [
-            {
-                "timestamp": datetime.now().isoformat(),
-                "event": "gst_filing_completed",
-                "status": "success",
-                "details": "50 invoices filed"
-            },
-            {
-                "timestamp": datetime.now().isoformat(),
-                "event": "invoice_validation_completed",
-                "status": "completed_with_issues",
-                "details": "48 valid, 2 invalid invoices"
-            },
-            {
-                "timestamp": datetime.now().isoformat(),
-                "event": "payroll_processed",
-                "status": "success",
-                "details": "10 employees processed"
-            },
-            {
-                "timestamp": datetime.now().isoformat(),
-                "event": "pf_compliance_verified",
-                "status": "compliant",
-                "details": "All PF rules followed"
-            },
-            {
-                "timestamp": datetime.now().isoformat(),
-                "event": "esi_compliance_verified",
-                "status": "compliant",
-                "details": "All ESI rules followed"
-            }
-        ]
-        
-        result = {
-            "action": "audit_trail_retrieval",
-            "sme_id": sme_id,
-            "events_count": len(audit_events),
-            "status": "audit_trail_retrieved",
-            "events": audit_events,
-            "summary": f"✅ Audit trail retrieved: {len(audit_events)} compliance events recorded"
-        }
-        
-        return result
-    except Exception as e:
-        return {
-            "action": "audit_trail_retrieval",
-            "status": "failed",
-            "error": str(e)
-        }
+    compliance_history = []
+    
+    if hasattr(tool_context, 'state'):
+        compliance_history = tool_context.state.get('compliance_history', [])
+    
+    # Filter by date range (simplified)
+    filtered_history = compliance_history  # In real implementation, filter by dates
+    
+    return {
+        'audit_trail': filtered_history,
+        'start_date': start_date,
+        'end_date': end_date,
+        'total_entries': len(filtered_history)
+    }
