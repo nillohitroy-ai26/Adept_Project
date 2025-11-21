@@ -167,49 +167,65 @@ Please ask me about compliance-related matters, and I'll be happy to help! 😊"
         return session_id
     
     def parse_gst_data(self, query: str) -> dict:
-        """Extract GST-related data from user query."""
+        """Parse GST filing details from user query."""
         import re
+        from datetime import datetime
         
-        data = {
-            'filing_period': None,
-            'invoice_count': None,
-            'invoices': []
-        }
+        # Extract filing period
+        filing_period = None
         
-        # Extract period (e.g., "January 2024", "2024-01")
-        period_patterns = [
-            r'(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{4})',
-            r'(\d{4})-(\d{2})',
-            r'Q(\d)\s+(\d{4})'
-        ]
+        # Match patterns like "February 2025", "Feb 2025", "2025-02"
+        month_year_match = re.search(r'(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s*(\d{4})', query.lower())
         
-        for pattern in period_patterns:
-            match = re.search(pattern, query, re.IGNORECASE)
-            if match:
-                if 'Q' in pattern:
-                    data['filing_period'] = f"Q{match.group(1)}_{match.group(2)}"
-                elif '-' in pattern:
-                    data['filing_period'] = f"{match.group(1)}-{match.group(2)}"
-                else:
-                    months = ['january', 'february', 'march', 'april', 'may', 'june',
-                             'july', 'august', 'september', 'october', 'november', 'december']
-                    month_name = match.group(1).lower()
-                    month_num = months.index(month_name) + 1
-                    data['filing_period'] = f"{match.group(2)}-{month_num:02d}"
-                break
+        if month_year_match:
+            month_name = month_year_match.group(1)
+            year = month_year_match.group(2)
+            
+            month_map = {
+                'january': '01', 'jan': '01',
+                'february': '02', 'feb': '02',
+                'march': '03', 'mar': '03',
+                'april': '04', 'apr': '04',
+                'may': '05',
+                'june': '06', 'jun': '06',
+                'july': '07', 'jul': '07',
+                'august': '08', 'aug': '08',
+                'september': '09', 'sep': '09',
+                'october': '10', 'oct': '10',
+                'november': '11', 'nov': '11',
+                'december': '12', 'dec': '12'
+            }
+            
+            month = month_map.get(month_name, '01')
+            filing_period = f"{year}-{month}"
+        
+        # Try YYYY-MM format
+        if not filing_period:
+            period_match = re.search(r'(\d{4})-(\d{2})', query)
+            if period_match:
+                filing_period = f"{period_match.group(1)}-{period_match.group(2)}"
         
         # Extract invoice count
-        invoice_match = re.search(r'(\d+)\s+invoices?', query, re.IGNORECASE)
+        invoice_count = 0
+        invoice_match = re.search(r'(\d+)\s*invoices?', query.lower())
         if invoice_match:
-            data['invoice_count'] = int(invoice_match.group(1))
-            # Generate sample invoices
-            data['invoices'] = [
-                {"invoice_number": f"INV-{i:03d}", "amount": 5000, "gst_rate": 18}
-                for i in range(data['invoice_count'])
-            ]
+            invoice_count = int(invoice_match.group(1))
         
-        return data
-    
+        # Build invoices list if count provided
+        invoices = []
+        if invoice_count > 0:
+            for i in range(invoice_count):
+                invoices.append({
+                    "invoice_number": f"INV-{i+1:03d}",
+                    "amount": 5000,
+                    "gst_rate": 18
+                })
+        
+        return {
+            'filing_period': filing_period,
+            'invoices': invoices,
+            'invoice_count': invoice_count  # IMPORTANT: Add this line
+        }
     def parse_payroll_data(self, query: str) -> dict:
         """Extract payroll-related data from user query."""
         import re
@@ -361,83 +377,214 @@ Please provide more details and I'll help you!"""
 
     
     async def _handle_gst_query(self, query: str, session) -> str:
-        """Handle GST-related queries - SINGLE RESPONSE."""
-        print("🔍 Detected: GST Filing Request")
+        """Handle GST-related queries - JSON generation or regular filing."""
         
-        # Parse data from query
-        gst_data = self.parse_gst_data(query)
+        # CRITICAL: Detect if user wants JSON file generation
+        json_keywords = ['json', 'generate', 'gstr-1', 'gstr1', 'download', 
+                        'export', 'portal', 'official format']
         
-        # FIX PROBLEM 2: Set conversation context when missing data
-        if not gst_data['filing_period']:
-            self.conversation_context.set_waiting('filing_period', 'gst_filing', {'sme_id': config.SME_ID}, query)
-            return "Please specify the filing period (e.g., 'January 2024' or '2024-01')"
+        is_json_request = any(keyword in query.lower() for keyword in json_keywords)
         
-        if not gst_data['invoice_count']:
-            self.conversation_context.set_waiting('invoice_count', 'gst_filing', {'sme_id': config.SME_ID, 'filing_period': gst_data['filing_period']}, query)
-            return "Please specify the number of invoices (e.g., '50 invoices')"
-        
-        # Execute filing if we have all data
-        return await self._execute_gst_filing(
-            {
+        if is_json_request:
+            # JSON GENERATION PATH
+            print("🔍 Detected: GST JSON Generation Request")
+            return await self._handle_gst_json_generation(query, session)
+        else:
+            # REGULAR FILING PATH (existing code)
+            print("🔍 Detected: GST Filing Request")
+            gst_data = self.parse_gst_data(query)
+            
+            if not gst_data['filing_period']:
+                return "Please specify the filing period (e.g., 'February 2025' or '2025-02')"
+            
+            if not gst_data['invoices']:
+                self.conversation_context.set_pending(
+                    action='gst_filing',
+                    params={
+                        'sme_id': config.SME_ID,
+                        'filing_period': gst_data['filing_period']
+                    },
+                    expected_input='invoice_count',
+                    last_query=query
+                )
+                return "Please specify the number of invoices (e.g., '50 invoices')"
+            
+            params = {
                 'sme_id': config.SME_ID,
                 'filing_period': gst_data['filing_period'],
                 'invoices': gst_data['invoices']
-            },
-            session
-        )
+            }
+            
+            return await self._execute_gst_filing(params, session)
+        
+    async def _handle_gst_json_generation(self, query: str, session) -> str:
+        """Handle GST JSON file generation requests - calls tool directly."""
+        import re
+        
+        print(f"\n{'='*80}")
+        print(f"🔍 JSON GENERATION MODE ACTIVATED")
+        print(f"{'='*80}\n")
+        
+        # Extract GSTIN (if provided in query)
+        gstin_match = re.search(r'\b\d{2}[A-Z]{5}\d{4}[A-Z]\d[Z][0-9A-Z]\b', query)
+        gstin = gstin_match.group(0) if gstin_match else "29TEST1234A1Z5"
+        
+        # Extract period using existing parser
+        gst_data = self.parse_gst_data(query)
+        filing_period = gst_data.get('filing_period')
+        
+        if not filing_period:
+            return "❌ Please specify the filing period (e.g., 'February 2025' or '022025')"
+        
+        # Convert YYYY-MM to MMYYYY format
+        if '-' in filing_period:
+            year, month = filing_period.split('-')
+            filing_period = f"{month}{year}"  # "2025-02" → "022025"
+        
+        # Extract invoice count
+        invoice_count = gst_data.get('invoice_count', 0)
+        
+        # Try to extract from query if not found
+        if not invoice_count:
+            numbers = re.findall(r'\b(\d+)\s*invoices?', query.lower())
+            invoice_count = int(numbers[0]) if numbers else 30
+        
+        print(f"📋 GSTIN: {gstin}")
+        print(f"📋 Period: {filing_period}")
+        print(f"📋 Invoice Count: {invoice_count}")
+        print(f"\n{'='*80}\n")
+        
+        # Import and call JSON generation tool DIRECTLY
+        try:
+            from gst_json_generator import generate_gstr1_json_simple
+            
+            result = generate_gstr1_json_simple(
+                gstin=gstin,
+                filing_period=filing_period,
+                invoice_count=invoice_count,
+                sme_id=config.SME_ID,
+                tool_context=session
+            )
+            
+            # Return the detailed summary from the tool
+            if result['status'] == 'success':
+                print(f"\n✅ SUCCESS: JSON file created at {result['file_path']}\n")
+                return result['summary']
+            else:
+                return f"❌ Error generating JSON: {result.get('result', 'Unknown error')}"
+        
+        except Exception as e:
+            import traceback
+            error_msg = f"❌ Error in JSON generation: {str(e)}"
+            print(error_msg)
+            traceback.print_exc()
+            return error_msg
     
     async def _execute_gst_filing(self, params: dict, session) -> str:
         """Execute GST filing with provided parameters."""
         print(f"\n[GST Agent Processing...]")
-        print(f"📋 Filing Period: {params['filing_period']}")
-        print(f"📋 Invoice Count: {len(params['invoices'])}")
+        print(f"📋 Filing Period: {params.get('filing_period', 'N/A')}")
         
-        gst_result = gst_filing_tool(
-            sme_id=params['sme_id'],
-            filing_period=params['filing_period'],
-            invoices=params['invoices'],
-            tool_context=session
-        )
+        # CRITICAL FIX: Handle both formats
+        # Old format: params['invoices'] = list of invoice dicts
+        # New format: params['invoice_count'] = int, params['file_path'] = JSON file
         
-        print(f"✅ {gst_result['result']}")
-        
-        validation_result = invoice_validation_tool(
-            sme_id=params['sme_id'],
-            invoices=params['invoices'],
-            tool_context=session
-        )
-        
-        print(f"\n📊 {validation_result['details']}")
-        
-        compliance_result = gst_compliance_check_tool(
-            sme_id=params['sme_id'],
-            filing_period=params['filing_period'],
-            tool_context=session
-        )
-        
-        # SINGLE RESPONSE - compile all info into one message
-        response = f"""✅ GST Filing Completed!
+        if 'invoices' in params and params['invoices']:
+            # Old format: Process invoices normally
+            invoice_count = len(params['invoices'])
+            invoices = params['invoices']
+            
+            print(f"📋 Invoice Count: {invoice_count}")
+            
+            gst_result = gst_filing_tool(
+                sme_id=params.get('sme_id', config.SME_ID),
+                filing_period=params['filing_period'],
+                invoices=invoices,
+                tool_context=session
+            )
+            
+            print(f"✅ {gst_result['result']}")
+            
+            validation_result = invoice_validation_tool(
+                sme_id=params.get('sme_id', config.SME_ID),
+                invoices=invoices,
+                tool_context=session
+            )
+            
+            print(f"\n📊 {validation_result['details']}")
+            
+            compliance_result = gst_compliance_check_tool(
+                sme_id=params.get('sme_id', config.SME_ID),
+                filing_period=params['filing_period'],
+                tool_context=session
+            )
+            
+            # SINGLE RESPONSE - compile all info into one message
+            response = f"""✅ GST Filing Completed!
 
-Filing Period: {params['filing_period']}
-Invoices Processed: {gst_result['invoice_count']}
-Total Value: ₹{gst_result['total_value']:,.2f}
+    Filing Period: {params['filing_period']}
+    Invoices Processed: {gst_result['invoice_count']}
+    Total Value: ₹{gst_result['total_value']:,.2f}
 
-Validation Results:
-  • Valid Invoices: {validation_result['valid_invoices']}
-  • Invalid Invoices: {validation_result['invalid_invoices']}
+    Validation Results:
+    • Valid Invoices: {validation_result['valid_invoices']}
+    • Invalid Invoices: {validation_result['invalid_invoices']}
 
-Compliance Status: {compliance_result['status'].upper()}"""
+    Compliance Status: {compliance_result['status'].upper()}"""
+            
+            if compliance_result['issues']:
+                response += "\n\n⚠️ Issues Found:\n"
+                for issue in compliance_result['issues']:
+                    response += f"  • {issue['type']} ({issue['severity']}): {issue['description']}\n"
+            
+            response += "\n💡 Recommendations:\n"
+            for rec in compliance_result['recommendations']:
+                response += f"  {rec}\n"
+            
+            return response
         
-        if compliance_result['issues']:
-            response += "\n\n⚠️ Issues Found:\n"
-            for issue in compliance_result['issues']:
-                response += f"  • {issue['type']} ({issue['severity']}): {issue['description']}\n"
+        elif 'file_path' in params:
+            # New format: JSON generation result
+            invoice_count = params.get('invoice_count', 0)
+            total_value = params.get('total_value', 0)
+            
+            print(f"📋 Invoice Count: {invoice_count}")
+            print(f"📄 JSON File: {params['file_path']}")
+            
+            response = f"""✅ GST JSON Generation Completed!
+
+    📄 File: {params['file_path']}
+    🏢 GSTIN: {params.get('gstin', 'N/A')}
+    📅 Period: {params['filing_period']}
+    📊 Invoices: {invoice_count}
+    💰 Total Value: ₹{total_value:,.2f}
+
+    ✅ JSON file ready to upload to GST Portal!
+
+    Next Steps:
+    1. Download: {params['file_path']}
+    2. Validate at: https://www.gst.gov.in/download/returns
+    3. Upload to GST Portal: https://www.gst.gov.in
+    4. File GSTR-1 return
+
+    {params.get('summary', '')}
+    """
+            return response
         
-        response += "\n💡 Recommendations:\n"
-        for rec in compliance_result['recommendations']:
-            response += f"  {rec}\n"
-        
-        return response
+        else:
+            # Fallback: Missing required data
+            invoice_count = params.get('invoice_count', 0)
+            print(f"📋 Invoice Count: {invoice_count}")
+            
+            return f"""⚠️ Incomplete GST Filing Request
+
+    Filing Period: {params.get('filing_period', 'Not specified')}
+    Invoice Count: {invoice_count}
+
+    Please provide either:
+    1. Invoice data for filing, OR
+    2. Use JSON generation for official GST format
+    """
     
     async def _handle_payroll_query(self, query: str, session) -> str:
         """Handle payroll-related queries - SINGLE RESPONSE."""
@@ -500,7 +647,7 @@ Month: {payroll_result['salary_month']}
   • PF: {pf_result['status'].upper()}
   • ESI: {esi_result['status'].upper()}
 
-All payroll requirements are compliant. Next deadline: 2024-12-15"""
+All payroll requirements are compliant"""
         
         return response
     

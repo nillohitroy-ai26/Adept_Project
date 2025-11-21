@@ -16,6 +16,8 @@ from dotenv import load_dotenv
 import os
 import sys
 
+
+
 # Configure paths for tool imports
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
 sys.path.insert(0, project_root)
@@ -67,6 +69,20 @@ try:
         pf_compliance_check_tool,
         esi_compliance_check_tool,
         tds_calculation_tool
+    ])
+    print("✓ Payroll tools imported successfully (4 tools)")
+except Exception as e:
+    import_errors.append(f"Payroll tools: {str(e)}")
+    print(f"✗ Payroll tools import failed: {e}")
+
+try:
+    from gst_json_generator import (
+    csv_to_gstr1_json,
+    generate_gstr1_json_simple
+)
+    tools_list.extend([
+        csv_to_gstr1_json,
+        generate_gstr1_json_simple
     ])
     print("✓ Payroll tools imported successfully (4 tools)")
 except Exception as e:
