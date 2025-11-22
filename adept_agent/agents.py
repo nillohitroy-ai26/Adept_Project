@@ -11,13 +11,6 @@ from dotenv import load_dotenv
 import os
 import sys
 
-from google.adk.agents import LlmAgent
-from dotenv import load_dotenv
-import os
-import sys
-
-
-
 # Configure paths for tool imports
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
 sys.path.insert(0, project_root)
