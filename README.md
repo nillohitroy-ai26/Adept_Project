@@ -75,6 +75,15 @@ It is suggested you create a vitrual environment using your preferred tooling e.
 
 Install dependenies e.g. pip install -r requirements.txt
 
+### Setting your env file
+
+Sign in to your Google Account. Head over to Google AI Studio. Create your API key. Paste the API Key in the env file. 
+
+```bash
+GOOGLE_API_KEY="YOUR GOOGLE AI STUDIO API KEY"
+
+```
+
 ### Running the Agent in ADK Web mode
 
 From the command line of the working directory execute the following command. 
